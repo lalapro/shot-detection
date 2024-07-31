@@ -13,7 +13,7 @@ save_path = "output/"
 class ShotDetector:
     def __init__(self):
         # Load the YOLO model created from main.py - change text to your relative path
-        self.model = YOLO("./runs/detect/train/weights/best_newdata.pt")
+        self.model = YOLO("./best_newdata.pt")
         self.class_names = ['Basketball']
 
         # Use video - replace text with your video path
