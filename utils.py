@@ -19,7 +19,7 @@ def score(ball_pos, hoop_pos):
     # Create line from two points
     if len(x) > 1:
         m, b = np.polyfit(x, y, 1)
-        print(x, y)
+        # print(x, y)
         # Checks if projected line fits between the ends of the rim {x = (y-b)/m}
         predicted_x = ((hoop_pos[-1][0][1] - 0.5*hoop_pos[-1][3]) - b)/m
         rim_x1 = hoop_pos[-1][0][0] - 0.4 * hoop_pos[-1][2]

@@ -12,7 +12,7 @@ if __name__ == "__main__":
     # 5. Go to runs/detect/train/weights and use best.pt as the model while running shot_detector.py
 
     # Load a model
-    model = YOLO('Yolo-Weights/yolov8n.pt')
+    model = YOLO('Yolo-Weights/best_newdata.pt')
 
     # Train the model
     results = model.train(data='config.yaml', epochs=100, imgsz=640)
