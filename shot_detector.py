@@ -11,15 +11,15 @@ from utils import score, detect_down, detect_up, in_hoop_region, clean_hoop_pos,
 save_path = "output/"
 
 class ShotDetector:
-    def __init__(self):
+    def __init__(self, num_images_to_save=1):
         # Load the YOLO model created from main.py - change text to your relative path
         self.model = YOLO("./best_newdata.pt")
         self.class_names = ['Basketball']
 
         # Use video - replace text with your video path
-        self.cap = cv2.VideoCapture("clip1.mp4")
+        self.cap = cv2.VideoCapture("clip2.mp4")
 
-
+        self.frames = []  # Store frames for reverse playback
         self.ball_pos = []  # array of tuples ((x_pos, y_pos), frame count, width, height, conf)
         self.hoop_pos = []  # array of tuples ((x_pos, y_pos), frame count, width, height, conf)
 
@@ -40,27 +40,35 @@ class ShotDetector:
         self.fade_counter = 0
         self.overlay_color = (0, 0, 0)
 
+        self.num_images_to_save = num_images_to_save
+        self.load_frames()
         self.run()
 
-    def run(self):
+    def load_frames(self):
+        """ Load all frames from the video into memory. """
         while True:
-            ret, self.frame = self.cap.read()
-
+            ret, frame = self.cap.read()
             if not ret:
-                # End of the video or an error occurred
                 break
+            self.frames.append(frame)
+        
+        self.cap.release()
 
+    def run(self):
+        images_saved = 0  # Track the number of images saved
+
+        for self.frame_count in range(len(self.frames) - 1, -1, -1):  # Process frames in reverse order
+            self.frame = self.frames[self.frame_count]
+            original_frame = self.frame.copy()  # Make a copy for drawing
+            
             results = self.model(self.frame, stream=True)
 
-            def is_overlapping(box1, box2):
+            def is_fully_contained(box1, box2):
                 x1_min, y1_min, x1_max, y1_max = box1
                 x2_min, y2_min, x2_max, y2_max = box2
 
-                if x1_min > x2_max or x2_min > x1_max:
-                    return False
-                if y1_min > y2_max or y2_min > y1_max:
-                    return False
-                return True
+                # Check if all corners of box1 are within box2
+                return (x1_min >= x2_min and x1_max <= x2_max and y1_min >= y2_min and y1_max <= y2_max)
             
             def save_bounding_box(frame, box, save_path, frame_count):
                 x1, y1, x2, y2 = box
@@ -70,11 +78,11 @@ class ShotDetector:
                 filename = os.path.join(save_path, f"person_{frame_count}.jpg")
                 cv2.imwrite(filename, cropped_img)
 
+            ball_boxes = []
+            person_boxes = []
+
             for r in results:
                 boxes = r.boxes
-                ball_boxes = []
-                person_boxes = []
-
                 for box in boxes:
                     # Bounding box
                     x1, y1, x2, y2 = box.xyxy[0]
@@ -94,30 +102,35 @@ class ShotDetector:
                     if (conf > 0.7) and cls == 0:
                         ball_boxes.append((x1, y1, x2, y2, center, conf))
                         self.ball_pos.append((center, self.frame_count, w, h, conf))
-                        cvzone.cornerRect(self.frame, (x1, y1, w, h))
+                        # Draw bounding box only on the copied frame
+                        cvzone.cornerRect(original_frame, (x1, y1, w, h))
 
                     elif cls == 2:  # Person
                         person_boxes.append((x1, y1, x2, y2))
 
-
             for ball in ball_boxes:
                 for person in person_boxes:
-                    if is_overlapping(ball[:4], person):
-                        print(f"Overlap detected between ball at {ball[4]} and person")
+                    if is_fully_contained(ball[:4], person):
+                        print(f"Full containment detected: ball at {ball[4]} is within person")
                         save_bounding_box(self.frame, person, save_path, self.frame_count)
+                        images_saved += 1  # Increment the image counter
+                        if images_saved >= self.num_images_to_save:
+                            break
+                if images_saved >= self.num_images_to_save:
+                    break
+            if images_saved >= self.num_images_to_save:
+                break
 
             self.clean_motion()
             # self.shot_detection()
             # self.display_score()
-            self.frame_count += 1
 
-            cv2.imshow('Frame', self.frame)
+            cv2.imshow('Frame', original_frame)  # Show the frame with bounding boxes
 
             # Close if 'q' is clicked
             if cv2.waitKey(1) & 0xFF == ord('q'):  # higher waitKey slows video down, use 1 for webcam
                 break
 
-        self.cap.release()
         cv2.destroyAllWindows()
 
     def clean_motion(self):
@@ -126,55 +139,5 @@ class ShotDetector:
         for i in range(0, len(self.ball_pos)):
             cv2.circle(self.frame, self.ball_pos[i][0], 2, (0, 0, 255), 2)
 
-        # Clean hoop motion and display current hoop center
-        # if len(self.hoop_pos) > 1:
-        #     self.hoop_pos = clean_hoop_pos(self.hoop_pos)
-        #     cv2.circle(self.frame, self.hoop_pos[-1][0], 2, (128, 128, 0), 2)
-
-    # def shot_detection(self):
-        # if len(self.hoop_pos) > 0 and len(self.ball_pos) > 0:
-            # Detecting when ball is in 'up' and 'down' area - ball can only be in 'down' area after it is in 'up'
-            # if not self.up:
-            #     self.up = detect_up(self.ball_pos, self.hoop_pos)
-            #     if self.up:
-            #         self.up_frame = self.ball_pos[-1][1]
-
-            # if self.up and not self.down:
-            #     self.down = detect_down(self.ball_pos, self.hoop_pos)
-            #     if self.down:
-            #         self.down_frame = self.ball_pos[-1][1]
-
-            # # If ball goes from 'up' area to 'down' area in that order, increase attempt and reset
-            # if self.frame_count % 10 == 0:
-            #     if self.up and self.down and self.up_frame < self.down_frame:
-            #         self.attempts += 1
-            #         self.up = False
-            #         self.down = False
-
-            #         # If it is a make, put a green overlay
-            #         if score(self.ball_pos, self.hoop_pos):
-            #             self.makes += 1
-            #             self.overlay_color = (0, 255, 0)
-            #             self.fade_counter = self.fade_frames
-
-            #         # If it is a miss, put a red overlay
-            #         else:
-            #             self.overlay_color = (0, 0, 255)
-            #             self.fade_counter = self.fade_frames
-
-    # def display_score(self):
-    #     # Add text
-    #     text = str(self.makes) + " / " + str(self.attempts)
-    #     cv2.putText(self.frame, text, (50, 125), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255), 6)
-    #     cv2.putText(self.frame, text, (50, 125), cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 0), 3)
-
-    #     # Gradually fade out color after shot
-    #     if self.fade_counter > 0:
-    #         alpha = 0.2 * (self.fade_counter / self.fade_frames)
-    #         self.frame = cv2.addWeighted(self.frame, 1 - alpha, np.full_like(self.frame, self.overlay_color), alpha, 0)
-    #         self.fade_counter -= 1
-
-
 if __name__ == "__main__":
-    ShotDetector()
-
+    ShotDetector(num_images_to_save=5)  # Specify the number of images to save
